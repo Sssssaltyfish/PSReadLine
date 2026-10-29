@@ -322,6 +322,12 @@ namespace Microsoft.PowerShell
         public Action<CommandAst> CommandValidationHandler { get; set; }
 
         /// <summary>
+        /// Returns ordered, non-overlapping color overrides for the current input.
+        /// Called during rendering. Selection and search emphasis take precedence.
+        /// </summary>
+        public Func<Ast, HighlightRegion[]> HighlightingHandler { get; set; }
+
+        /// <summary>
         /// Most commands do not accept script blocks, but for those that do,
         /// we want to validate commands in the script block arguments.
         /// Unfortunately, we can't know how the argument is used.  In the worst
@@ -690,6 +696,20 @@ namespace Microsoft.PowerShell
         }
         private Action<CommandAst> _commandValidationHandler;
         internal bool _commandValidationHandlerSpecified;
+
+        [Parameter]
+        [@AllowNull]
+        public Func<Ast, HighlightRegion[]> HighlightingHandler
+        {
+            get => _highlightingHandler;
+            set
+            {
+                _highlightingHandler = value;
+                _highlightingHandlerSpecified = true;
+            }
+        }
+        private Func<Ast, HighlightRegion[]> _highlightingHandler;
+        internal bool _highlightingHandlerSpecified;
 
         [Parameter]
         public SwitchParameter HistorySearchCursorMovesToEnd

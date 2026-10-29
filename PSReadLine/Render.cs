@@ -446,6 +446,8 @@ namespace Microsoft.PowerShell
         {
             var text = ParseInput();
             _prediction.QueryForSuggestion(text);
+            var highlights = GetHighlightRegions(text.Length);
+            int highlightIndex = 0;
 
             string color = defaultColor;
             string activeColor = string.Empty;
@@ -467,7 +469,7 @@ namespace Microsoft.PowerShell
                 }
             }
 
-            void RenderOneChar(char charToRender, bool toEmphasize)
+            void RenderOneChar(char charToRender, bool toEmphasize, string highlightColor)
             {
                 if (charToRender == '\n')
                 {
@@ -501,7 +503,7 @@ namespace Microsoft.PowerShell
                     return;
                 }
 
-                UpdateColorsIfNecessary(toEmphasize ? _options._emphasisColor : color);
+                UpdateColorsIfNecessary(toEmphasize ? _options._emphasisColor : highlightColor ?? color);
 
                 if (char.IsControl(charToRender))
                 {
@@ -623,7 +625,21 @@ namespace Microsoft.PowerShell
                 var charToRender = text[i];
                 var toEmphasize = i >= _emphasisStart && i < (_emphasisStart + _emphasisLength);
 
-                RenderOneChar(charToRender, toEmphasize);
+                string highlightColor = null;
+                if (highlights != null)
+                {
+                    while (highlightIndex < highlights.Count && highlights[highlightIndex].EndOffset <= i)
+                    {
+                        highlightIndex++;
+                    }
+
+                    if (highlightIndex < highlights.Count && highlights[highlightIndex].StartOffset <= i)
+                    {
+                        highlightColor = highlights[highlightIndex].Color;
+                    }
+                }
+
+                RenderOneChar(charToRender, toEmphasize, highlightColor);
             }
 
             if (inSelectedRegion)
@@ -651,6 +667,52 @@ namespace Microsoft.PowerShell
             }
 
             return currentLogicalLine + 1;
+        }
+
+        private bool _invokingHighlightingHandler;
+
+        private List<HighlightRegion> GetHighlightRegions(int inputLength)
+        {
+            var handler = Options.HighlightingHandler;
+            if (handler == null || _invokingHighlightingHandler)
+            {
+                return null;
+            }
+
+            try
+            {
+                _invokingHighlightingHandler = true;
+                var regions = handler(_ast);
+                if (regions == null || regions.Length == 0)
+                {
+                    return null;
+                }
+
+                var result = new List<HighlightRegion>(regions.Length);
+                int previousEnd = 0;
+                foreach (var region in regions)
+                {
+                    // Ignore invalid regions without preventing the input from being edited.
+                    if (region == null || region.StartOffset < previousEnd || region.EndOffset > inputLength)
+                    {
+                        continue;
+                    }
+
+                    result.Add(region);
+                    previousEnd = region.EndOffset;
+                }
+
+                return result;
+            }
+            catch (Exception)
+            {
+                // A highlighter must not interrupt editing or write into the input display.
+                return null;
+            }
+            finally
+            {
+                _invokingHighlightingHandler = false;
+            }
         }
 
         /// <summary>

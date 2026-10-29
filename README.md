@@ -146,6 +146,10 @@ If you want to change the command line in some unimplmented way in your custom k
 
 Please see the [Contribution Guide][] for how to develop and contribute.
 
+### Custom highlighting
+
+For an optional input-coloring callback, see [Custom input highlighting](docs/Highlighting.md).
+
 ### Building
 
 To build `PSReadLine` on Windows, Linux, or macOS,

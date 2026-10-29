@@ -42,6 +42,10 @@ namespace Microsoft.PowerShell
             {
                 Options.CommandValidationHandler = options.CommandValidationHandler;
             }
+            if (options._highlightingHandlerSpecified)
+            {
+                Options.HighlightingHandler = options.HighlightingHandler;
+            }
             if (options._maximumHistoryCount.HasValue)
             {
                 Options.MaximumHistoryCount = options.MaximumHistoryCount;

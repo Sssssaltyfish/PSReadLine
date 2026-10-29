@@ -594,6 +594,7 @@ namespace Test
                 EnableScreenReaderMode            = ScreenReaderModeEnabled,
                 ExtraPromptLineCount              = PSConsoleReadLineOptions.DefaultExtraPromptLineCount,
                 HistoryNoDuplicates               = PSConsoleReadLineOptions.DefaultHistoryNoDuplicates,
+                HighlightingHandler               = null,
                 HistorySaveStyle                  = HistorySaveStyle.SaveNothing,
                 HistorySearchCaseSensitive        = PSConsoleReadLineOptions.DefaultHistorySearchCaseSensitive,
                 HistorySearchCursorMovesToEnd     = PSConsoleReadLineOptions.DefaultHistorySearchCursorMovesToEnd,
