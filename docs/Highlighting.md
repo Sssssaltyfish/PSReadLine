@@ -36,3 +36,6 @@ Recursive rendering does not invoke the callback again.
 
 There is one callback, like the existing history and validation handlers. A caller that needs
 several highlighters can combine their results into one ordered, non-overlapping array.
+
+An independent [command-highlighting sample module](../samples/PSReadLine.CommandHighlighting/README.md)
+uses this interface to distinguish known and unknown command names.
