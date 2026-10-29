@@ -25,7 +25,7 @@ $previous = [Func[System.Management.Automation.Language.Ast, Microsoft.PowerShel
 Set-PSReadLineOption -HighlightingHandler $previous
 Push-Location $PSScriptRoot
 try {
-    Enable-CommandHighlighting
+    Enable-CommandHighlighting -CacheDurationMilliseconds 0
     Assert-Highlight 'Get-Date' @()
     Assert-Highlight '__psreadline_command_does_not_exist__' @("`e[31m")
     Assert-Highlight 'Get-Date | __psreadline_command_does_not_exist__' @("`e[31m")
@@ -84,6 +84,52 @@ try {
     Set-Alias -Name Test-HighlightingModuleAlias -Value Compress-Archive -Scope Global
     Assert-Highlight 'Test-HighlightingModuleAlias' @("`e[31m")
     if (Get-Module Microsoft.PowerShell.Archive) { throw 'Highlighting imported a module' }
+
+    Enable-CommandHighlighting -InvalidColor '#e06c75' -CacheDurationMilliseconds 0
+    Assert-Highlight 'Get-Date' @()
+    Assert-Highlight '__psreadline_command_does_not_exist__' @('#e06c75')
+    Enable-CommandHighlighting -InvalidColor DarkYellow
+    Assert-Highlight '__psreadline_command_does_not_exist__' @('DarkYellow')
+
+    Enable-CommandHighlighting -CacheDurationMilliseconds 60000
+    Assert-Highlight 'Test-HighlightingCommand' @("`e[31m")
+    function global:Test-HighlightingCommand { throw 'Commands must not be executed' }
+    Assert-Highlight 'Test-HighlightingCommand' @("`e[31m")
+    # Changing location invalidates even an unexpired entry.
+    Set-Location ..
+    Assert-Highlight 'Test-HighlightingCommand' @()
+    Set-Location $PSScriptRoot
+    Remove-Item Function:/Test-HighlightingCommand
+
+    Enable-CommandHighlighting -CacheDurationMilliseconds 60000
+    Assert-Highlight 'Test-HighlightingCommand' @("`e[31m")
+    function global:Test-HighlightingCommand { throw 'Commands must not be executed' }
+    $originalPath = $env:PATH
+    try {
+        $env:PATH = $originalPath + [IO.Path]::PathSeparator + $PSScriptRoot
+        Assert-Highlight 'Test-HighlightingCommand' @()
+    } finally {
+        $env:PATH = $originalPath
+    }
+    Assert-Highlight 'Test-HighlightingCommand' @()
+    Remove-Item Function:/Test-HighlightingCommand
+    Assert-Highlight 'Test-HighlightingCommand' @()
+    $originalPathExt = $env:PATHEXT
+    try {
+        $env:PATHEXT = $originalPathExt + ';.HIGHLIGHTTEST'
+        Assert-Highlight 'Test-HighlightingCommand' @("`e[31m")
+    } finally {
+        $env:PATHEXT = $originalPathExt
+    }
+
+    Enable-CommandHighlighting -CacheDurationMilliseconds 50
+    Assert-Highlight 'Test-HighlightingCommand' @("`e[31m")
+    function global:Test-HighlightingCommand { throw 'Commands must not be executed' }
+    [Threading.Thread]::Sleep(75)
+    Assert-Highlight 'Test-HighlightingCommand' @()
+    Remove-Item Function:/Test-HighlightingCommand
+    [Threading.Thread]::Sleep(75)
+    Assert-Highlight 'Test-HighlightingCommand' @("`e[31m")
 
     Disable-CommandHighlighting
     if (-not [object]::ReferenceEquals((Get-PSReadLineOption).HighlightingHandler, $previous)) {

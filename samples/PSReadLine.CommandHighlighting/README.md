@@ -22,18 +22,35 @@ Enable-CommandHighlighting -InvalidColor '#e06c75'
 Disable-CommandHighlighting
 ```
 
+`-InvalidColor` accepts an ANSI color sequence, a console color name (such as
+`DarkYellow`), or an RGB hex color. The default is ANSI SGR 31. To share PSReadLine's
+configured error color, use `Enable-CommandHighlighting -InvalidColor (Get-PSReadLineOption).ErrorColor`.
+Put the desired invocation in your profile after importing the module; enabling again
+applies the new settings and clears the lookup cache. Known commands are never recolored.
+
 Results describe the current session, not what executing the line might change. For example,
 `Set-Alias newCommand Get-Date; newCommand` can show `newCommand` as unknown until the alias
 has actually been defined. Only already imported modules are considered: exports of modules
 not yet imported may appear unknown. Highlighting does not execute expressions or import
 modules to discover commands.
 
-Each render queries the current session. Repeated command names within that render share one
-lookup; results are discarded afterward. Changes to aliases, functions, files, PATH, or location
-are reflected on the next render, without a time-based cache. This follows fish's approach of
-checking current command availability, but runs synchronously in the user's PowerShell runspace
-so its functions and aliases remain visible. Slow filesystem or network PATH entries can delay
-a render. No timer, background runspace, key binding, input rewrite, or prompt hook is installed.
+Command lookups run synchronously in the user's PowerShell runspace. Results are cached for
+1,000 milliseconds by default, with at most 256 entries. Repeated command names within a render
+also share one lookup. PATH, PATHEXT, or location changes clear the cache immediately.
+
+Use `-CacheDurationMilliseconds` to configure the lifetime (0 through 60,000). A value of 0
+disables cross-render caching. Expiration is measured from lookup completion; cache hits do
+not extend it. Function, alias, or file changes can remain cached until the first render after
+expiration. There is no timer that forces a redraw while idle. Enabling again clears the cache.
+
+```powershell
+Enable-CommandHighlighting -InvalidColor "`e[31m" -CacheDurationMilliseconds 1000
+```
+
+Caching reduces repeated synchronous discovery while editing arguments, correcting input,
+or moving the cursor. New command names and expired entries still require a lookup; slow
+filesystem or network PATH entries can delay those renders. No background runspace, key binding,
+input rewrite, or prompt hook is installed.
 
 Enabling temporarily replaces the single highlighting callback. Disabling or removing the
 module restores the previous callback if this module still owns the slot. To combine providers,

@@ -7,7 +7,9 @@ $script:previousHandler = $null
 function Enable-CommandHighlighting {
     [CmdletBinding()]
     param(
-        [string] $InvalidColor = "`e[31m"
+        [string] $InvalidColor = "`e[31m",
+        [ValidateRange(0, 60000)]
+        [int] $CacheDurationMilliseconds = 1000
     )
 
     if (-not (Get-Command Set-PSReadLineOption).Parameters.ContainsKey('HighlightingHandler')) {
@@ -19,12 +21,25 @@ function Enable-CommandHighlighting {
     Disable-CommandHighlighting
     $script:previousHandler = (Get-PSReadLineOption).HighlightingHandler
     $context = $ExecutionContext
+    $state = @{
+        Cache = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
+        Path = $null
+        PathExt = $null
+        Location = $null
+    }
 
     $script:handler = [Func[System.Management.Automation.Language.Ast, Microsoft.PowerShell.HighlightRegion[]]] {
         param($ast)
 
-        # Reuse lookups only within this render. The next render observes the
-        # current session and filesystem without timers or invalidation hooks.
+        $location = $context.SessionState.Path.CurrentLocation.Path
+        if ($state.Path -cne $env:PATH -or $state.PathExt -cne $env:PATHEXT -or $state.Location -cne $location) {
+            $state.Cache.Clear()
+            $state.Path = $env:PATH
+            $state.PathExt = $env:PATHEXT
+            $state.Location = $location
+        }
+        $now = [Environment]::TickCount64
+        # Deduplicate even when the cross-render cache is disabled or fills up.
         $commandsFound = [Collections.Generic.Dictionary[string, bool]]::new([StringComparer]::Ordinal)
         $commands = $ast.FindAll({
             param($node)
@@ -36,13 +51,24 @@ function Enable-CommandHighlighting {
             if ([string]::IsNullOrEmpty($name)) { continue }
 
             if (-not $commandsFound.ContainsKey($name)) {
-                # Enumerate exact matches without the module auto-loading performed by GetCommand.
-                $resolved = [Linq.Enumerable]::FirstOrDefault[System.Management.Automation.CommandInfo](
-                    $context.InvokeCommand.GetCommands($name, [System.Management.Automation.CommandTypes]::All, $false))
-                if ($resolved -is [System.Management.Automation.AliasInfo]) {
-                    $resolved = $resolved.ResolvedCommand
+                $entry = $state.Cache[$name]
+                if ($CacheDurationMilliseconds -gt 0 -and $null -ne $entry -and
+                    $now - $entry.Time -lt $CacheDurationMilliseconds) {
+                    $commandsFound[$name] = $entry.Exists
                 }
-                $commandsFound[$name] = $null -ne $resolved
+                else {
+                    # Enumerate exact matches without the module auto-loading performed by GetCommand.
+                    $resolved = [Linq.Enumerable]::FirstOrDefault[System.Management.Automation.CommandInfo](
+                        $context.InvokeCommand.GetCommands($name, [System.Management.Automation.CommandTypes]::All, $false))
+                    if ($resolved -is [System.Management.Automation.AliasInfo]) {
+                        $resolved = $resolved.ResolvedCommand
+                    }
+                    $commandsFound[$name] = $null -ne $resolved
+                    if ($CacheDurationMilliseconds -gt 0) {
+                        if ($state.Cache.Count -ge 256) { $state.Cache.Clear() }
+                        $state.Cache[$name] = @{ Exists = $commandsFound[$name]; Time = [Environment]::TickCount64 }
+                    }
+                }
             }
 
             if (-not $commandsFound[$name]) {
