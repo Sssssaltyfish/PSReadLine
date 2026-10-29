@@ -28,9 +28,12 @@ has actually been defined. Only already imported modules are considered: exports
 not yet imported may appear unknown. Highlighting does not execute expressions or import
 modules to discover commands.
 
-The cache holds at most 256 command names for one second. PATH or location changes clear it
-immediately. Changes to aliases, functions, or files are reflected on a render after expiry.
-No timer, background runspace, key binding, input rewrite, or prompt hook is installed.
+Each render queries the current session. Repeated command names within that render share one
+lookup; results are discarded afterward. Changes to aliases, functions, files, PATH, or location
+are reflected on the next render, without a time-based cache. This follows fish's approach of
+checking current command availability, but runs synchronously in the user's PowerShell runspace
+so its functions and aliases remain visible. Slow filesystem or network PATH entries can delay
+a render. No timer, background runspace, key binding, input rewrite, or prompt hook is installed.
 
 Enabling temporarily replaces the single highlighting callback. Disabling or removing the
 module restores the previous callback if this module still owns the slot. To combine providers,

@@ -40,6 +40,7 @@ try {
     Set-Location $PSScriptRoot
     Assert-Highlight '.\Tests.ps1' @()
 
+    Assert-Highlight 'Test-HighlightingCommand' @("`e[31m")
     function global:Test-HighlightingCommand { throw 'Commands must not be executed' }
     Set-Alias -Name Test-HighlightingAlias -Value Test-HighlightingCommand -Scope Global
     Set-Alias -Name Test-HighlightingBrokenAlias -Value __psreadline_command_does_not_exist__ -Scope Global
@@ -49,8 +50,34 @@ try {
     $pwshName = if ($IsWindows) { 'pwsh.exe' } else { 'pwsh' }
     Assert-Highlight "& '$PSHOME/$pwshName'" @()
     Remove-Item Function:/Test-HighlightingCommand
-    Start-Sleep -Milliseconds 1100
     Assert-Highlight 'Test-HighlightingCommand' @("`e[31m")
+    Assert-Highlight 'Test-HighlightingAlias' @("`e[31m")
+    Set-Alias -Name Test-HighlightingAlias -Value Get-Date -Scope Global
+    Assert-Highlight 'Test-HighlightingAlias' @()
+    Set-Alias -Name Test-HighlightingAlias -Value __psreadline_command_does_not_exist__ -Scope Global
+    Assert-Highlight 'Test-HighlightingAlias' @("`e[31m")
+    Assert-Highlight '__psreadline_command_does_not_exist__; __psreadline_command_does_not_exist__' @("`e[31m", "`e[31m")
+
+    $testDirectory = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString())
+    $testScript = Join-Path $testDirectory 'Test-PSReadLineHighlightFile.ps1'
+    $originalPath = $env:PATH
+    New-Item -ItemType Directory -Path $testDirectory | Out-Null
+    try {
+        Assert-Highlight "& '$testScript'" @("`e[31m")
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Tests.ps1') -Destination $testScript
+        Assert-Highlight "& '$testScript'" @()
+        Assert-Highlight 'Test-PSReadLineHighlightFile.ps1' @("`e[31m")
+        $env:PATH = $testDirectory + [IO.Path]::PathSeparator + $originalPath
+        Assert-Highlight 'Test-PSReadLineHighlightFile.ps1' @()
+        $env:PATH = $originalPath
+        Assert-Highlight 'Test-PSReadLineHighlightFile.ps1' @("`e[31m")
+        Remove-Item -LiteralPath $testScript
+        Assert-Highlight "& '$testScript'" @("`e[31m")
+    } finally {
+        $env:PATH = $originalPath
+        Remove-Item -LiteralPath $testScript -ErrorAction Ignore
+        Remove-Item -LiteralPath $testDirectory
+    }
 
     Remove-Module Microsoft.PowerShell.Archive -ErrorAction Ignore
     Assert-Highlight 'Compress-Archive' @("`e[31m")

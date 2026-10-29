@@ -18,24 +18,14 @@ function Enable-CommandHighlighting {
     $invalid = [Microsoft.PowerShell.HighlightRegion]::new(0, 1, $InvalidColor).Color
     Disable-CommandHighlighting
     $script:previousHandler = (Get-PSReadLineOption).HighlightingHandler
-    $state = @{
-        Cache = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
-        Path = $null
-        Location = $null
-    }
     $context = $ExecutionContext
 
     $script:handler = [Func[System.Management.Automation.Language.Ast, Microsoft.PowerShell.HighlightRegion[]]] {
         param($ast)
 
-        $location = $context.SessionState.Path.CurrentLocation.Path
-        if ($state.Path -cne $env:PATH -or $state.Location -cne $location) {
-            $state.Cache.Clear()
-            $state.Path = $env:PATH
-            $state.Location = $location
-        }
-
-        $now = [Environment]::TickCount64
+        # Reuse lookups only within this render. The next render observes the
+        # current session and filesystem without timers or invalidation hooks.
+        $commandsFound = [Collections.Generic.Dictionary[string, bool]]::new([StringComparer]::Ordinal)
         $commands = $ast.FindAll({
             param($node)
             $node -is [System.Management.Automation.Language.CommandAst]
@@ -45,19 +35,17 @@ function Enable-CommandHighlighting {
             $name = $command.GetCommandName()
             if ([string]::IsNullOrEmpty($name)) { continue }
 
-            $entry = $state.Cache[$name]
-            if ($null -eq $entry -or $now - $entry.Time -ge 1000) {
+            if (-not $commandsFound.ContainsKey($name)) {
                 # Enumerate exact matches without the module auto-loading performed by GetCommand.
-                $resolved = @($context.InvokeCommand.GetCommands($name, [System.Management.Automation.CommandTypes]::All, $false))[0]
+                $resolved = [Linq.Enumerable]::FirstOrDefault[System.Management.Automation.CommandInfo](
+                    $context.InvokeCommand.GetCommands($name, [System.Management.Automation.CommandTypes]::All, $false))
                 if ($resolved -is [System.Management.Automation.AliasInfo]) {
                     $resolved = $resolved.ResolvedCommand
                 }
-                $entry = @{ Exists = $null -ne $resolved; Time = $now }
-                if ($state.Cache.Count -ge 256) { $state.Cache.Clear() }
-                $state.Cache[$name] = $entry
+                $commandsFound[$name] = $null -ne $resolved
             }
 
-            if (-not $entry.Exists) {
+            if (-not $commandsFound[$name]) {
                 $extent = $command.CommandElements[0].Extent
                 [Microsoft.PowerShell.HighlightRegion]::new($extent.StartOffset, $extent.EndOffset, $invalid)
             }
