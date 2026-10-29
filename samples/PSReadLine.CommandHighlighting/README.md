@@ -11,13 +11,14 @@ Import-Module ./samples/PSReadLine.CommandHighlighting/PSReadLine.CommandHighlig
 Enable-CommandHighlighting
 ```
 
-Known commands are green and unknown commands are red. Each statically named command is
+Known commands retain their normal syntax colors. Unknown commands use the terminal palette's
+red (ANSI SGR 31), so their color follows the active terminal color scheme. Each statically named command is
 checked, including commands in pipelines and subexpressions. Functions, aliases, loaded
 cmdlets, executables in PATH, and explicit script paths use PowerShell command discovery.
 Dynamic invocations such as `& $command` retain their normal syntax colors.
 
 ```powershell
-Enable-CommandHighlighting -ValidColor '#98c379' -InvalidColor '#e06c75'
+Enable-CommandHighlighting -InvalidColor '#e06c75'
 Disable-CommandHighlighting
 ```
 

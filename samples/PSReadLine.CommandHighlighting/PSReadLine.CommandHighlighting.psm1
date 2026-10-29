@@ -7,16 +7,14 @@ $script:previousHandler = $null
 function Enable-CommandHighlighting {
     [CmdletBinding()]
     param(
-        [string] $ValidColor = 'Green',
-        [string] $InvalidColor = 'Red'
+        [string] $InvalidColor = "`e[31m"
     )
 
     if (-not (Get-Command Set-PSReadLineOption).Parameters.ContainsKey('HighlightingHandler')) {
         throw 'This module requires PSReadLine with the HighlightingHandler option.'
     }
 
-    # Validate colors before replacing the current handler.
-    $valid = [Microsoft.PowerShell.HighlightRegion]::new(0, 1, $ValidColor).Color
+    # Validate the color before replacing the current handler.
     $invalid = [Microsoft.PowerShell.HighlightRegion]::new(0, 1, $InvalidColor).Color
     Disable-CommandHighlighting
     $script:previousHandler = (Get-PSReadLineOption).HighlightingHandler
@@ -59,9 +57,10 @@ function Enable-CommandHighlighting {
                 $state.Cache[$name] = $entry
             }
 
-            $extent = $command.CommandElements[0].Extent
-            $color = if ($entry.Exists) { $valid } else { $invalid }
-            [Microsoft.PowerShell.HighlightRegion]::new($extent.StartOffset, $extent.EndOffset, $color)
+            if (-not $entry.Exists) {
+                $extent = $command.CommandElements[0].Extent
+                [Microsoft.PowerShell.HighlightRegion]::new($extent.StartOffset, $extent.EndOffset, $invalid)
+            }
         }
     }.GetNewClosure()
 

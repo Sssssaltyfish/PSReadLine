@@ -26,36 +26,36 @@ Set-PSReadLineOption -HighlightingHandler $previous
 Push-Location $PSScriptRoot
 try {
     Enable-CommandHighlighting
-    Assert-Highlight 'Get-Date' @('Green')
-    Assert-Highlight '__psreadline_command_does_not_exist__' @('Red')
-    Assert-Highlight 'Get-Date | __psreadline_command_does_not_exist__' @('Green', 'Red')
+    Assert-Highlight 'Get-Date' @()
+    Assert-Highlight '__psreadline_command_does_not_exist__' @("`e[31m")
+    Assert-Highlight 'Get-Date | __psreadline_command_does_not_exist__' @("`e[31m")
     Assert-Highlight '& $dynamicName' @()
-    Assert-Highlight '& "Get-Date"' @('Green')
-    Assert-Highlight 'Write-Output $(Get-Date)' @('Green', 'Green')
+    Assert-Highlight '& "Get-Date"' @()
+    Assert-Highlight 'Write-Output $(Get-Date)' @()
     Assert-Highlight '' @()
-    Assert-Highlight 'Get-Date "unterminated' @('Green')
-    Assert-Highlight '.\Tests.ps1' @('Green')
+    Assert-Highlight 'Get-Date "unterminated' @()
+    Assert-Highlight '.\Tests.ps1' @()
     Set-Location ..
-    Assert-Highlight '.\Tests.ps1' @('Red')
+    Assert-Highlight '.\Tests.ps1' @("`e[31m")
     Set-Location $PSScriptRoot
-    Assert-Highlight '.\Tests.ps1' @('Green')
+    Assert-Highlight '.\Tests.ps1' @()
 
     function global:Test-HighlightingCommand { throw 'Commands must not be executed' }
     Set-Alias -Name Test-HighlightingAlias -Value Test-HighlightingCommand -Scope Global
     Set-Alias -Name Test-HighlightingBrokenAlias -Value __psreadline_command_does_not_exist__ -Scope Global
-    Assert-Highlight 'Test-HighlightingCommand' @('Green')
-    Assert-Highlight 'Test-HighlightingAlias' @('Green')
-    Assert-Highlight 'Test-HighlightingBrokenAlias' @('Red')
+    Assert-Highlight 'Test-HighlightingCommand' @()
+    Assert-Highlight 'Test-HighlightingAlias' @()
+    Assert-Highlight 'Test-HighlightingBrokenAlias' @("`e[31m")
     $pwshName = if ($IsWindows) { 'pwsh.exe' } else { 'pwsh' }
-    Assert-Highlight "& '$PSHOME/$pwshName'" @('Green')
+    Assert-Highlight "& '$PSHOME/$pwshName'" @()
     Remove-Item Function:/Test-HighlightingCommand
     Start-Sleep -Milliseconds 1100
-    Assert-Highlight 'Test-HighlightingCommand' @('Red')
+    Assert-Highlight 'Test-HighlightingCommand' @("`e[31m")
 
     Remove-Module Microsoft.PowerShell.Archive -ErrorAction Ignore
-    Assert-Highlight 'Compress-Archive' @('Red')
+    Assert-Highlight 'Compress-Archive' @("`e[31m")
     Set-Alias -Name Test-HighlightingModuleAlias -Value Compress-Archive -Scope Global
-    Assert-Highlight 'Test-HighlightingModuleAlias' @('Red')
+    Assert-Highlight 'Test-HighlightingModuleAlias' @("`e[31m")
     if (Get-Module Microsoft.PowerShell.Archive) { throw 'Highlighting imported a module' }
 
     Disable-CommandHighlighting
