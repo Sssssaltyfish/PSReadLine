@@ -397,6 +397,11 @@ namespace Microsoft.PowerShell
         public int AnsiEscapeTimeout { get; set; }
 
         /// <summary>
+        /// Insert terminal pastes as a single edit. On Windows this enables VT input.
+        /// </summary>
+        public bool EnableBracketedPaste { get; set; }
+
+        /// <summary>
         /// This is the text you want turned red on parse errors, but must
         /// occur immediately before the cursor when readline starts.
         /// If the prompt function is pure, this value can be inferred, e.g.
@@ -823,6 +828,14 @@ namespace Microsoft.PowerShell
             set => _ansiEscapeTimeout = value;
         }
         internal int? _ansiEscapeTimeout;
+
+        [Parameter]
+        public bool EnableBracketedPaste
+        {
+            get => _enableBracketedPaste.GetValueOrDefault();
+            set => _enableBracketedPaste = value;
+        }
+        internal bool? _enableBracketedPaste;
 
         [Parameter]
         [ValidateNotNull]

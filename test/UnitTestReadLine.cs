@@ -592,6 +592,7 @@ namespace Test
                 DingDuration                      = 1,  // Make tests virtually silent when they ding
                 DingTone                          = 37, // Make tests virtually silent when they ding
                 EnableScreenReaderMode            = ScreenReaderModeEnabled,
+                EnableBracketedPaste              = false,
                 ExtraPromptLineCount              = PSConsoleReadLineOptions.DefaultExtraPromptLineCount,
                 HistoryNoDuplicates               = PSConsoleReadLineOptions.DefaultHistoryNoDuplicates,
                 HighlightingHandler               = null,

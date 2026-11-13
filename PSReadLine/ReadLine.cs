@@ -53,6 +53,7 @@ namespace Microsoft.PowerShell
         private IPSConsoleReadLineMockableMethods _mockableMethods;
         private IConsole _console;
         private ICharMap _charMap;
+        private bool _bracketedPasteEnabled;
         private Encoding _initialOutputEncoding;
         private bool _skipOutputEncodingChange;
         private EngineIntrinsics _engineIntrinsics;
@@ -91,63 +92,86 @@ namespace Microsoft.PowerShell
             return runspace?.ConnectionInfo != null;
         }
 
+        private void ReadConsoleKey()
+        {
+            var key = _console.ReadKey();
+            if (_cancelReadCancellationToken.IsCancellationRequested && _charMap is BracketedPasteCharMap pasteMap)
+            {
+                // Hosts wake a cancelled ReadLine with dummy input. Do not retain
+                // that input in an unfinished paste, or the reader cannot wake up.
+                _charMap = pasteMap.Inner;
+            }
+            _charMap.ProcessKey(key);
+        }
+
         private void ReadOneOrMoreKeys()
         {
+            // A Win32 key record is encoded as several console characters. Drain
+            // the available records before dispatch can restore native input mode;
+            // otherwise the tail of a key-up record could reach the next prompt.
+            bool drainWin32Input = _charMap is BracketedPasteCharMap pasteMap &&
+                pasteMap.Inner is WindowsAnsiCharMap;
             _readkeyStopwatch.Restart();
-            while (_console.KeyAvailable)
+            do
             {
-                // _charMap is only guaranteed to accumulate input while KeyAvailable
-                // returns false. Make sure to check KeyAvailable after every ProcessKey call,
-                // and clear it in a loop in case the input was something like ^[[1 which can
-                // be 3, 2, or part of 1 key depending on timing.
-                _charMap.ProcessKey(_console.ReadKey());
-                while (_charMap.KeyAvailable)
+                while (_console.KeyAvailable)
                 {
-                    var key = PSKeyInfo.FromConsoleKeyInfo(_charMap.ReadKey());
-                    _lastNKeys.Enqueue(key);
-                    _queuedKeys.Enqueue(key);
-                }
-                if (_readkeyStopwatch.ElapsedMilliseconds > 2)
-                {
-                    // Don't spend too long in this loop if there are lots of queued keys
-                    break;
-                }
-            }
-
-            if (_queuedKeys.Count == 0)
-            {
-                while (!_charMap.KeyAvailable)
-                {
-                    // Don't want to block when there is an escape sequence being read.
-                    if (_charMap.InEscapeSequence)
+                    // _charMap is only guaranteed to accumulate input while KeyAvailable
+                    // returns false. Make sure to check KeyAvailable after every ProcessKey call,
+                    // and clear it in a loop in case the input was something like ^[[1 which can
+                    // be 3, 2, or part of 1 key depending on timing.
+                    ReadConsoleKey();
+                    while (_charMap.KeyAvailable)
                     {
-                        if (_console.KeyAvailable)
+                        var paste = (_charMap as BracketedPasteCharMap)?.ReadPaste();
+                        var key = paste != null ? PSKeyInfo.FromPaste(paste) : PSKeyInfo.FromConsoleKeyInfo(_charMap.ReadKey());
+                        _lastNKeys.Enqueue(key);
+                        _queuedKeys.Enqueue(key);
+                    }
+                    if (!drainWin32Input && _readkeyStopwatch.ElapsedMilliseconds > 2)
+                    {
+                        // Don't spend too long in this loop if there are lots of queued keys
+                        break;
+                    }
+                }
+
+                if (_queuedKeys.Count == 0)
+                {
+                    while (!_charMap.KeyAvailable)
+                    {
+                        // Don't want to block when there is an escape sequence being read.
+                        if (_charMap.InEscapeSequence)
                         {
-                            _charMap.ProcessKey(_console.ReadKey());
+                            if (_console.KeyAvailable)
+                            {
+                                ReadConsoleKey();
+                            }
+                            else
+                            {
+                                // We don't want to sleep for the whole escape timeout
+                                // or the user will have a laggy console, but there's
+                                // nothing to block on at this point either, so do a
+                                // small sleep to yield the CPU while we're waiting
+                                // to decide what the input was. This will only run
+                                // if there are no keys waiting to be read.
+                                Thread.Sleep(5);
+                            }
                         }
                         else
                         {
-                            // We don't want to sleep for the whole escape timeout
-                            // or the user will have a laggy console, but there's
-                            // nothing to block on at this point either, so do a
-                            // small sleep to yield the CPU while we're waiting
-                            // to decide what the input was. This will only run
-                            // if there are no keys waiting to be read.
-                            Thread.Sleep(5);
+                            ReadConsoleKey();
                         }
                     }
-                    else
+                    while (_charMap.KeyAvailable)
                     {
-                        _charMap.ProcessKey(_console.ReadKey());
+                        var paste = (_charMap as BracketedPasteCharMap)?.ReadPaste();
+                        var key = paste != null ? PSKeyInfo.FromPaste(paste) : PSKeyInfo.FromConsoleKeyInfo(_charMap.ReadKey());
+                        _lastNKeys.Enqueue(key);
+                        _queuedKeys.Enqueue(key);
                     }
                 }
-                while (_charMap.KeyAvailable)
-                {
-                    var key = PSKeyInfo.FromConsoleKeyInfo(_charMap.ReadKey());
-                    _lastNKeys.Enqueue(key);
-                    _queuedKeys.Enqueue(key);
-                }
             }
+            while (drainWin32Input && _console.KeyAvailable);
         }
 
         private void ReadKeyThreadProc()
@@ -395,9 +419,11 @@ namespace Microsoft.PowerShell
             }
 
             var oldControlCAsInput = false;
+            var pasteMap = _singleton._charMap as BracketedPasteCharMap;
+            var charMap = pasteMap?.Inner ?? _singleton._charMap;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                PlatformWindows.Init(ref _singleton._charMap);
+                PlatformWindows.Init(ref charMap);
             }
             else
             {
@@ -407,6 +433,27 @@ namespace Microsoft.PowerShell
                     Console.TreatControlCAsInput = true;
                 }
                 catch {}
+            }
+
+            _singleton._bracketedPasteEnabled = _singleton.Options.EnableBracketedPaste &&
+                !(console is PlatformWindows.LegacyWin32Console);
+            if (console is VirtualTerminal terminal)
+            {
+                terminal.UseWindowsVtInput = _singleton._bracketedPasteEnabled &&
+                    RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !Console.IsInputRedirected;
+            }
+            if (_singleton._bracketedPasteEnabled)
+            {
+                pasteMap = pasteMap != null && ReferenceEquals(pasteMap.Inner, charMap)
+                    ? pasteMap
+                    : new BracketedPasteCharMap(charMap, _singleton.Options.AnsiEscapeTimeout,
+                        win32Input: charMap is WindowsAnsiCharMap);
+                pasteMap.EscapeTimeout = _singleton.Options.AnsiEscapeTimeout;
+                _singleton._charMap = pasteMap;
+            }
+            else
+            {
+                _singleton._charMap = charMap;
             }
 
             if (lastRunStatus.HasValue)
@@ -427,6 +474,7 @@ namespace Microsoft.PowerShell
 
                     _singleton._readLineReady = true;
                     _singleton._cancelReadCancellationToken = cancellationToken;
+                    _singleton.SetBracketedPasteMode(true);
                     return _singleton.InputLoop();
                 }
                 catch (OperationCanceledException)
@@ -506,6 +554,7 @@ namespace Microsoft.PowerShell
                         // and some operating systems, it can cause a hang.
                         if (!_singleton._closingWaitHandle.WaitOne(0))
                         {
+                            _singleton.SetBracketedPasteMode(false);
                             console.OutputEncoding = _singleton._initialOutputEncoding;
 
                             bool IsValid(ConsoleColor color)
@@ -531,6 +580,21 @@ namespace Microsoft.PowerShell
                     {
                         PlatformWindows.Complete();
                     }
+                }
+            }
+        }
+
+        private void SetBracketedPasteMode(bool enabled)
+        {
+            if (_bracketedPasteEnabled)
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    _console.Write(enabled ? "\x1b[?9001h\x1b[?2004h" : "\x1b[?2004l\x1b[?9001l");
+                }
+                else
+                {
+                    _console.Write(enabled ? "\x1b[?2004h" : "\x1b[?2004l");
                 }
             }
         }
@@ -646,6 +710,7 @@ namespace Microsoft.PowerShell
         {
             try
             {
+                SetBracketedPasteMode(false);
                 _console.OutputEncoding = _initialOutputEncoding;
                 return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                     ? PlatformWindows.CallPossibleExternalApplication(func)
@@ -653,6 +718,7 @@ namespace Microsoft.PowerShell
             }
             finally
             {
+                SetBracketedPasteMode(true);
                 if (!_skipOutputEncodingChange)
                 {
                     _console.OutputEncoding = Encoding.UTF8;
@@ -667,6 +733,12 @@ namespace Microsoft.PowerShell
 
         void ProcessOneKey(PSKeyInfo key, Dictionary<PSKeyInfo, KeyHandler> dispatchTable, bool ignoreIfNoAction, object arg)
         {
+            if (key.PasteText != null)
+            {
+                PasteText(key.PasteText);
+                return;
+            }
+
             var consoleKey = key.AsConsoleKeyInfo();
 
             // Our dispatch tables are built as much as possible in a portable way, so for example,

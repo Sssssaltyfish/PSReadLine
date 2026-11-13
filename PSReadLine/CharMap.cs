@@ -76,6 +76,8 @@ namespace Microsoft.PowerShell
         private int _readKeyIndexFrom;
         // The upper bound of `_pendingKeys` to read from, exclusive.
         private int _readKeyIndexTo;
+        private int _repeatCount;
+        internal bool Win32InputMode { get; set; }
 
         public WindowsAnsiCharMap(long escapeTimeout = 50)
         {
@@ -139,6 +141,11 @@ namespace Microsoft.PowerShell
             if (_readKeyIndexFrom < _readKeyIndexTo)
             {
                 var key = _pendingKeys[_readKeyIndexFrom];
+                if (_repeatCount > 1)
+                {
+                    --_repeatCount;
+                    return key;
+                }
                 if (++_readKeyIndexFrom == _readKeyIndexTo)
                 {
                     for (int i = _readKeyIndexTo; i < _addKeyIndex; i++)
@@ -431,6 +438,10 @@ namespace Microsoft.PowerShell
                 }
 
                 ch = GetSeqChar(2);
+                if (Win32InputMode && ProcessWin32InputSequence())
+                {
+                    return true;
+                }
                 if (ch == '1')
                 {
                     // ^[[1 - note, it could also be a ^[[1n~ so this function
@@ -487,6 +498,68 @@ namespace Microsoft.PowerShell
             {
                 return false;
             }
+        }
+
+        // Windows' win32-input-mode preserves virtual keys, modifiers and repeat
+        // counts that cannot be expressed by traditional VT key sequences.
+        private bool ProcessWin32InputSequence()
+        {
+            Span<int> values = stackalloc int[] { 0, 0, 0, 0, 0, 1 };
+            int field = 0;
+            int value = 0;
+            bool hasValue = false;
+            for (int i = 2; i < _addKeyIndex; i++)
+            {
+                char c = GetSeqChar(i);
+                if (c >= '0' && c <= '9')
+                {
+                    int digit = c - '0';
+                    if (value > (ushort.MaxValue - digit) / 10) return false;
+                    value = value * 10 + digit;
+                    hasValue = true;
+                    continue;
+                }
+
+                if (c != ';' && c != '_') return false;
+                if (hasValue) values[field] = value;
+                if (c == ';')
+                {
+                    if (++field == values.Length) return false;
+                    value = 0;
+                    hasValue = false;
+                    continue;
+                }
+
+                if (i != _addKeyIndex - 1 || values[0] > 255 || values[3] > 1) return false;
+                int vk = values[0];
+                char character = (char)values[2];
+                // Like Console.ReadKey, ignore key-up and bare modifier events,
+                // except an Alt key-up carrying an Alt+numpad character.
+                bool altKey = vk == 0x12 || vk == 0xa4 || vk == 0xa5;
+                bool modifier = (vk >= 0x10 && vk <= 0x12) || vk == 0x14 ||
+                    vk == 0x90 || vk == 0x91 || (vk >= 0xa0 && vk <= 0xa5);
+                int state = values[4];
+                bool altNumpad = (state & 0x03) != 0 &&
+                    ((vk >= 0x60 && vk <= 0x69) ||
+                     ((state & 0x100) == 0 && (vk == 0x0c || vk == 0x2d || (vk >= 0x21 && vk <= 0x28))));
+                if ((values[3] == 0 && !(altKey && character != '\0')) ||
+                    (modifier && character == '\0') || altNumpad || values[5] == 0)
+                {
+                    _addKeyIndex = _readKeyIndexFrom = _readKeyIndexTo = 0;
+                    _pendingKeys[0] = default;
+                    return true;
+                }
+
+                SetKey(0, new ConsoleKeyInfo(character, (ConsoleKey)vk,
+                    shift: (state & 0x10) != 0,
+                    alt: (state & 0x03) != 0,
+                    control: (state & 0x0c) != 0));
+                _repeatCount = values[5];
+                CondenseState();
+                return true;
+            }
+
+            return true; // A partial numeric sequence.
         }
 
         private bool ProcessBracket1Sequence()

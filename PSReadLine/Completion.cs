@@ -1094,13 +1094,13 @@ namespace Microsoft.PowerShell
                         prependNextKey = true;
 
                         // without this branch experience doesn't look naturally
-                        if (_dispatchTable.TryGetValue(nextKey, out var handler) &&
+                        if (nextKey.PasteText != null || (_dispatchTable.TryGetValue(nextKey, out var handler) &&
                             (
                                 handler.Action == CopyOrCancelLine ||
                                 handler.Action == Cut ||
                                 handler.Action == DeleteChar ||
                                 handler.Action == Paste
-                            )
+                            ))
                         )
                         {
                             keepSelection = true;

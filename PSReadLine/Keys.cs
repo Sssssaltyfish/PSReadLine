@@ -18,6 +18,8 @@ namespace Microsoft.PowerShell
         }
         internal static PSKeyInfo From(char c) => new PSKeyInfo(c.ToString());
         internal static PSKeyInfo From(ConsoleKey key) => new PSKeyInfo(key.ToString());
+        internal static PSKeyInfo FromPaste(string text) => new PSKeyInfo("BracketedPaste") { PasteText = text };
+        internal string PasteText { get; private set; }
         internal static PSKeyInfo WithAlt(char c) => new PSKeyInfo("Alt+" + c) { Alt = true };
         internal static PSKeyInfo WithAlt(ConsoleKey key) => new PSKeyInfo("Alt+" + key) { Alt = true };
         internal static PSKeyInfo WithCtrl(char c) => new PSKeyInfo("Ctrl+" + c) { Control = true };
@@ -64,6 +66,7 @@ namespace Microsoft.PowerShell
 
         public ConsoleKeyInfo AsConsoleKeyInfo()
         {
+            if (PasteText != null) return default;
             return ConsoleKeyChordConverter.Convert(KeyStr)[0];
         }
 

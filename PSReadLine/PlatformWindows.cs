@@ -195,7 +195,7 @@ static class PlatformWindows
 
             // This envvar will force VT mode on or off depending on the setting 1 or 0.
             var overrideVtInput = Environment.GetEnvironmentVariable("PSREADLINE_VTINPUT");
-            if (overrideVtInput == "1")
+            if ((_enableVtOutput && PSConsoleReadLine.GetOptions().EnableBracketedPaste) || overrideVtInput == "1")
             {
                 _enableVtInput = true;
             }
@@ -216,6 +216,10 @@ static class PlatformWindows
             if (_enableVtInput)
             {
                 EnableAnsiInput(ref charMap);
+            }
+            else if (!(charMap is DotNetCharMap))
+            {
+                charMap = new DotNetCharMap();
             }
 
             // Is the TerminateOrphanedConsoleApps feature enabled?
@@ -262,7 +266,9 @@ static class PlatformWindows
 
     private static void EnableAnsiInput(ref ICharMap charMap)
     {
-        charMap = new WindowsAnsiCharMap(PSConsoleReadLine.GetOptions().AnsiEscapeTimeout);
+        charMap = charMap as WindowsAnsiCharMap ?? new WindowsAnsiCharMap();
+        charMap.EscapeTimeout = PSConsoleReadLine.GetOptions().AnsiEscapeTimeout;
+        ((WindowsAnsiCharMap)charMap).Win32InputMode = PSConsoleReadLine.GetOptions().EnableBracketedPaste;
     }
 
     internal static void Complete()
@@ -339,6 +345,36 @@ static class PlatformWindows
 
     private static readonly Lazy<SafeFileHandle>  _inputHandle = new Lazy<SafeFileHandle>(() => OpenConsoleHandle("CONIN$"));
     private static readonly Lazy<SafeFileHandle> _outputHandle = new Lazy<SafeFileHandle>(() => OpenConsoleHandle("CONOUT$"));
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool ReadConsoleW(SafeFileHandle input, [Out] char[] buffer, int length,
+        out int charactersRead, IntPtr control);
+
+    // Win32 input mode encodes each key record as a VT sequence. Reading those
+    // characters one at a time with Console.ReadKey makes large pastes expensive.
+    internal sealed class VtInputReader
+    {
+        private readonly char[] _buffer = new char[4096];
+        private int _position;
+        private int _length;
+
+        internal bool KeyAvailable => _position < _length || Console.KeyAvailable;
+
+        internal ConsoleKeyInfo ReadKey()
+        {
+            if (_position == _length)
+            {
+                if (!ReadConsoleW(_inputHandle.Value, _buffer, _buffer.Length, out _length, IntPtr.Zero))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+                _position = 0;
+                if (_length == 0) return default;
+            }
+
+            return new ConsoleKeyInfo(_buffer[_position++], 0, false, false, false);
+        }
+    }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool GetConsoleMode(IntPtr hConsole, out uint dwMode);

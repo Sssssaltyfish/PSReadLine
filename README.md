@@ -150,6 +150,10 @@ Please see the [Contribution Guide][] for how to develop and contribute.
 
 For an optional input-coloring callback, see [Custom input highlighting](docs/Highlighting.md).
 
+### Bracketed paste
+
+For opt-in terminal paste handling, see [Bracketed paste](docs/BracketedPaste.md).
+
 ### Building
 
 To build `PSReadLine` on Windows, Linux, or macOS,

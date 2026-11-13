@@ -137,6 +137,10 @@ namespace Microsoft.PowerShell
             {
                 Options.AnsiEscapeTimeout = options.AnsiEscapeTimeout;
             }
+            if (options._enableBracketedPaste.HasValue)
+            {
+                Options.EnableBracketedPaste = options.EnableBracketedPaste;
+            }
             if (options.PromptText != null)
             {
                 Options.PromptText = options.PromptText;

@@ -334,7 +334,7 @@ namespace Test
             return result;
         }
 
-        protected static readonly char[] endEscapeChars = { 'm', 'J' };
+        protected static readonly char[] endEscapeChars = { 'm', 'J', 'h', 'l' };
         private static readonly ConsoleColor DefaultForeground = ReadLine.Colors[0];
         private static readonly ConsoleColor DefaultBackground = ReadLine.BackgroundColors[0];
 
@@ -348,6 +348,10 @@ namespace Test
         
         protected static readonly Dictionary<string, Action<TestConsole>> EscapeSequenceActions = new()
         {
+            { "?2004h", c => { } },
+            { "?2004l", c => { } },
+            { "?9001h", c => { } },
+            { "?9001l", c => { } },
             {"7", c => ToggleNegative(c, true) },
             {"27", c => ToggleNegative(c, false) },
             {"40", c => c.BackgroundColor = ConsoleColor.Black},

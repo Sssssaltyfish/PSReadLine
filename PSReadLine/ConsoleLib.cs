@@ -19,6 +19,10 @@ namespace Microsoft.PowerShell.Internal
         private static Lazy<Func<bool, ConsoleKeyInfo>> _readKeyMethod = new Lazy<Func<bool, ConsoleKeyInfo>>(
             () => _readKeyOverride == null ? Console.ReadKey : _readKeyOverride);
 
+        private PlatformWindows.VtInputReader _vtInputReader;
+        internal bool UseWindowsVtInput { get; set; }
+        private bool ReadBufferedVtInput => UseWindowsVtInput && _readKeyOverride == null;
+
         public int CursorLeft
         {
             get => Console.CursorLeft;
@@ -145,8 +149,12 @@ namespace Microsoft.PowerShell.Internal
             }
         }
 
-        public ConsoleKeyInfo ReadKey()                  => _TryIgnoreIOE(() => _readKeyMethod.Value(true));
-        public bool KeyAvailable                         => _TryIgnoreIOE(() => Console.KeyAvailable);
+        public ConsoleKeyInfo ReadKey() => ReadBufferedVtInput
+            ? (_vtInputReader ??= new PlatformWindows.VtInputReader()).ReadKey()
+            : _TryIgnoreIOE(() => _readKeyMethod.Value(true));
+        public bool KeyAvailable => ReadBufferedVtInput
+            ? (_vtInputReader?.KeyAvailable ?? Console.KeyAvailable)
+            : _TryIgnoreIOE(() => Console.KeyAvailable);
         public void SetWindowPosition(int left, int top) => Console.SetWindowPosition(left, top);
         public void SetCursorPosition(int left, int top) => Console.SetCursorPosition(left, top);
         public virtual void Write(string value)          => Console.Write(value);

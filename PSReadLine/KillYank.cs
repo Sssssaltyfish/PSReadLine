@@ -668,11 +668,14 @@ namespace Microsoft.PowerShell
         /// </summary>
         public static void Paste(ConsoleKeyInfo? key = null, object arg = null)
         {
-            string textToPaste = Clipboard.GetText();
+            PasteText(Clipboard.GetText());
+        }
 
+        private static void PasteText(string textToPaste)
+        {
             if (textToPaste != null)
             {
-                textToPaste = textToPaste.Replace("\r", "");
+                textToPaste = textToPaste.Replace("\r\n", "\n").Replace("\r", "\n");
                 textToPaste = textToPaste.Replace("\t", "    ");
                 if (_singleton._visualSelectionCommandCount > 0)
                 {
